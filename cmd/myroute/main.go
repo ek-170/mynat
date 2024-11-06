@@ -5,15 +5,24 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 )
 
 var (
-	cookie uint32 = 0x2112A442
+	magicCookie uint32 = 0x2112A442
 
 	// STUN msg type
+	//
+	// 	0                 1
+	// 	2  3  4 5 6 7 8 9 0 1 2 3 4 5
+	//  +--+--+-+-+-+-+-+-+-+-+-+-+-+-+
+	//  |M |M |M|M|M|C|M|M|M|C|M|M|M|M|
+	//  |11|10|9|8|7|1|6|5|4|0|3|2|1|0|
+	//  +--+--+-+-+-+-+-+-+-+-+-+-+-+-+
+
 	bindingReq uint16 = 0x0001
 	bindingRes uint16 = 0x0101
 )
@@ -34,7 +43,7 @@ func main() {
 	reqMsg := Message{
 		Type:          bindingReq,
 		Length:        0,
-		Cookie:        cookie,
+		Cookie:        magicCookie,
 		TransactionID: tid,
 	}
 
@@ -54,34 +63,45 @@ func main() {
 		fmt.Println(err)
 		panic("binary encoding failed")
 	}
-	fmt.Println(hex.Dump(req))
 
 	_, err = conn.Write(req)
 	if err != nil {
 		panic("STUN request failed")
 	}
 
-	res := make([]byte, 74)
+	res := make([]byte, 1500)
 	_, err = conn.Read(res)
 	if err != nil {
 		panic("STUN response reading failed")
 	}
-	fmt.Println(hex.Dump(res))
 	resMsg := Message{}
 	// binary.Decode(b2, binary.BigEndian, &resMsg)
 	err = resMsg.Decode(res)
 	if err != nil {
-		panic("STUN response decoding failed")
+		panic(err)
 	}
 	fmt.Println(resMsg)
 }
 
 // RFC8489
 type Message struct {
-	Type          uint16   // 2bit: 00, 14bit: Type
-	Length        uint16   // Message Lengh except Header
-	Cookie        uint32   // must be fixed value: 0x2112A442
-	TransactionID [12]byte // created by crypto/rand
+
+	// 	0                   1                   2                   3
+	// 	0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//  |0 0|     STUN Message Type     |         Message Length        |
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//  |                         Magic Cookie                          |
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//  |                                                               |
+	//  |                     Transaction ID (96 bits)                  |
+	//  |                                                               |
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+	Type          uint16                  // 2bit: 00, 14bit: Type
+	Length        uint16                  // Message Lengh except Header
+	Cookie        uint32                  // must be fixed value: 0x2112A442
+	TransactionID [transactionIDByte]byte // created by crypto/rand
 	Attributes    Attributes
 }
 
@@ -89,13 +109,29 @@ type Attributes []Attribute
 
 // MUST end on a 32-bit boundary
 type Attribute struct {
+
+	// 	0                   1                   2                   3
+	// 	0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//  |         Type                  |            Length             |
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//  |                         Value (variable)                ....
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
 	Type   uint16
 	Length uint16 // except padding bytes
 	Value  []byte
 }
 
+const (
+	headerByte        = 20
+	transactionIDByte = 12
+	attrBoundaryByte  = 4
+)
+
 // Encode encodes a STUN message into binary format.
 func (m *Message) Encode() ([]byte, error) {
+	fmt.Println("-- encode --")
 	buf := new(bytes.Buffer)
 	if err := binary.Write(buf, binary.BigEndian, m.Type); err != nil {
 		return nil, err
@@ -121,14 +157,82 @@ func (m *Message) Encode() ([]byte, error) {
 			return nil, err
 		}
 	}
+	fmt.Println(hex.Dump(buf.Bytes()))
 
 	return buf.Bytes(), nil
 }
 
 func (m *Message) Decode(data []byte) error {
-	// ヘッダのデコード
+	fmt.Println("-- decode --")
+	if len(data) < headerByte {
+		return errors.New("header size is too short")
+	}
+	fmt.Println(hex.Dump(data))
+
+	mtype := data[:2]
+	fmt.Println("message type")
+	fmt.Println(hex.Dump(mtype))
+	m.Type = binary.BigEndian.Uint16(mtype)
+
+	mlen := data[2:4]
+	fmt.Println("message length")
+	fmt.Println(hex.Dump(mlen))
+	m.Length = binary.BigEndian.Uint16(mlen)
+
+	cookie := data[4:8]
+	fmt.Println("magic cookie")
+	fmt.Println(hex.Dump(cookie))
+	m.Cookie = binary.BigEndian.Uint32(cookie)
+
+	tid := [transactionIDByte]byte{}
+	for i := 0; i < transactionIDByte; i++ {
+		tid[i] = data[i+8]
+	}
+	fmt.Println("transaction id")
+	fmt.Println(hex.Dump(tid[:]))
+	m.TransactionID = tid
 
 	// Attribnutesのデコード
+	// 重複して属性タイプが表示された場合は最初の値のみ有効
+	if m.Length > 0 {
+		attrs := make(Attributes, 1)
+		index := 0
+		attrsByte := data[headerByte:]
+		for index < int(m.Length) {
+			attr := Attribute{}
+
+			aType := binary.BigEndian.Uint16(attrsByte[index : index+2])
+			index = index + 2
+			attr.Type = aType
+			fmt.Println("attr type")
+			fmt.Println(hex.Dump(attrsByte[index : index+2]))
+			// TODO
+			// type values between 0x0000 and 0x7FFF are comprehension-required
+			// type values between 0x8000 and 0xFFFF are comprehension-optional
+
+			aLen := binary.BigEndian.Uint16(attrsByte[index : index+2])
+			index = index + 2
+			attr.Length = aLen
+			fmt.Println("attr len")
+			fmt.Printf("aLen: %d\n", aLen)
+			fmt.Println(hex.Dump(attrsByte[index : index+2]))
+			pad := 0
+			if aLen%attrBoundaryByte != 0 {
+				pad = int(attrBoundaryByte - (aLen % attrBoundaryByte))
+				fmt.Printf("attr padding: %d\n", pad)
+			}
+
+			val := attrsByte[index : index+int(aLen)]
+			index = index + int(aLen) + pad
+			attr.Value = val
+			fmt.Println("attr value")
+			fmt.Println(hex.Dump(val))
+
+			attrs = append(attrs, attr)
+		}
+
+		m.Attributes = attrs
+	}
 
 	return nil
 }
