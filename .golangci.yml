@@ -1,0 +1,14 @@
+run:
+  timeout: 10m
+linters:
+  disable-all: true
+  enable:
+    - bodyclose
+    - errcheck
+    - gosimple
+    - ineffassign
+    - megacheck
+    - govet
+    - staticcheck
+    - typecheck
+    - unused

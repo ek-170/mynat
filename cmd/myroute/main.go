@@ -124,6 +124,40 @@ type Attribute struct {
 }
 
 const (
+	// Comprehension-required range (0x0000-0x7FFF):
+	// 0x0000: Reserved
+	reserved uint16 = 0x0000
+	// 0x0001: MAPPED-ADDRESS
+	mappedAddress uint16 = 0x0001
+	// 0x0002: Reserved; was RESPONSE-ADDRESS prior to [RFC5389]
+	responseAddress uint16 = 0x002
+	// 0x0003: Reserved; was CHANGE-REQUEST prior to [RFC5389]
+	cahngeRequest uint16 = 0x0003
+	// 0x0004: Reserved; was SOURCE-ADDRESS prior to [RFC5389]
+	sourceAddress uint16 = 0x0004
+	// 0x0005: Reserved; was CHANGED-ADDRESS prior to [RFC5389]
+	changedAddress uint16 = 0x0005
+	// 0x0006: USERNAME
+	username uint16 = 0x0006
+	// 0x0007: Reserved; was PASSWORD prior to [RFC5389]
+	password uint16 = 0x0007
+	// 0x0008: MESSAGE-INTEGRITY
+	messageIntegrity uint16 = 0x0008
+	// 0x0009: ERROR-CODE
+	errorCode uint16 = 0x0009
+	// 0x000A: UNKNOWN-ATTRIBUTES
+	unknownAttributes uint16 = 0x000A
+	// 0x000B: Reserved; was REFLECTED-FROM prior to [RFC5389]
+	reflectedFrom uint16 = 0x000B
+	// 0x0014: REALM
+	realm uint16 = 0x0014
+	// 0x0015: NONCE
+	nonce uint16 = 0x0015
+	// 0x0020: XOR-MAPPED-ADDRESS
+	xorMappedAddress uint16 = 0x0020
+)
+
+const (
 	headerByte        = 20
 	transactionIDByte = 12
 	attrBoundaryByte  = 4
@@ -202,7 +236,7 @@ func (m *Message) Decode(data []byte) error {
 			attr := Attribute{}
 
 			aType := binary.BigEndian.Uint16(attrsByte[index : index+2])
-			index = index + 2
+			index += 2
 			attr.Type = aType
 			fmt.Println("attr type")
 			fmt.Println(hex.Dump(attrsByte[index : index+2]))
@@ -211,7 +245,7 @@ func (m *Message) Decode(data []byte) error {
 			// type values between 0x8000 and 0xFFFF are comprehension-optional
 
 			aLen := binary.BigEndian.Uint16(attrsByte[index : index+2])
-			index = index + 2
+			index += 2
 			attr.Length = aLen
 			fmt.Println("attr len")
 			fmt.Printf("aLen: %d\n", aLen)
@@ -223,7 +257,7 @@ func (m *Message) Decode(data []byte) error {
 			}
 
 			val := attrsByte[index : index+int(aLen)]
-			index = index + int(aLen) + pad
+			index += (int(aLen) + pad)
 			attr.Value = val
 			fmt.Println("attr value")
 			fmt.Println(hex.Dump(val))
@@ -235,4 +269,12 @@ func (m *Message) Decode(data []byte) error {
 	}
 
 	return nil
+}
+
+func (m *Message) getAttr() {
+
+}
+
+func (attrs *Attributes) includeTypes(types ...uint16) error {
+
 }
