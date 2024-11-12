@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
+	"net/netip"
+
+	"github.com/ek-170/myroute/pkg/logger"
 )
 
 var (
@@ -36,7 +38,7 @@ const (
 )
 
 func main() {
-	slog.Info("start")
+	logger.Info("start")
 	tid := [transactionIdSize]byte{}
 	rand.Read(tid[:])
 
@@ -80,7 +82,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(resMsg)
+	resMsg.extractXORMappedAddress()
 }
 
 // RFC8489
@@ -157,11 +159,40 @@ const (
 	xorMappedAddress uint16 = 0x0020
 )
 
+var attrTypes map[uint16]string = map[uint16]string{
+	reserved:          "Reserved",
+	mappedAddress:     "MAPPED-ADDRESS",
+	responseAddress:   "RESPONSE-ADDRESS",
+	cahngeRequest:     "CHANGE-REQUEST",
+	sourceAddress:     "SOURCE-ADDRESS",
+	changedAddress:    "CHANGED-ADDRESS",
+	username:          "USERNAME",
+	password:          "PASSWORD",
+	messageIntegrity:  "MESSAGE-INTEGRITY",
+	errorCode:         "ERROR-CODE",
+	unknownAttributes: "UNKNOWN-ATTRIBUTES",
+	reflectedFrom:     "REFLECTED-FROM",
+	realm:             "REALM",
+	nonce:             "NONCE",
+	xorMappedAddress:  "XOR-MAPPED-ADDRESS",
+}
+
 const (
 	headerByte        = 20
 	transactionIDByte = 12
 	attrBoundaryByte  = 4
 )
+
+func extractAttr(a Attributes, attrType uint16) (Attribute, bool) {
+	if len(a) > 0 {
+		for _, v := range a {
+			if attrType == v.Type {
+				return v, true
+			}
+		}
+	}
+	return Attribute{}, false
+}
 
 // Encode encodes a STUN message into binary format.
 func (m *Message) Encode() ([]byte, error) {
@@ -201,7 +232,7 @@ func (m *Message) Decode(data []byte) error {
 	if len(data) < headerByte {
 		return errors.New("header size is too short")
 	}
-	fmt.Println(hex.Dump(data))
+	fmt.Println(hex.Dump(data[:headerByte]))
 
 	mtype := data[:2]
 	fmt.Println("message type")
@@ -209,9 +240,9 @@ func (m *Message) Decode(data []byte) error {
 	m.Type = binary.BigEndian.Uint16(mtype)
 
 	mlen := data[2:4]
-	fmt.Println("message length")
-	fmt.Println(hex.Dump(mlen))
 	m.Length = binary.BigEndian.Uint16(mlen)
+	fmt.Printf("Message length: %d\n", m.Length)
+	fmt.Println(hex.Dump(mlen))
 
 	cookie := data[4:8]
 	fmt.Println("magic cookie")
@@ -232,49 +263,109 @@ func (m *Message) Decode(data []byte) error {
 		attrs := make(Attributes, 1)
 		index := 0
 		attrsByte := data[headerByte:]
+		dup := make(map[uint16]bool, 1)
 		for index < int(m.Length) {
 			attr := Attribute{}
 
 			aType := binary.BigEndian.Uint16(attrsByte[index : index+2])
-			index += 2
 			attr.Type = aType
-			fmt.Println("attr type")
+			fmt.Printf("Attribute type: %s\n", attrTypes[attr.Type])
 			fmt.Println(hex.Dump(attrsByte[index : index+2]))
+			index += 2
 			// TODO
 			// type values between 0x0000 and 0x7FFF are comprehension-required
 			// type values between 0x8000 and 0xFFFF are comprehension-optional
 
 			aLen := binary.BigEndian.Uint16(attrsByte[index : index+2])
-			index += 2
 			attr.Length = aLen
-			fmt.Println("attr len")
-			fmt.Printf("aLen: %d\n", aLen)
+			fmt.Printf("Attribute len: %d\n", attr.Length)
 			fmt.Println(hex.Dump(attrsByte[index : index+2]))
 			pad := 0
 			if aLen%attrBoundaryByte != 0 {
 				pad = int(attrBoundaryByte - (aLen % attrBoundaryByte))
-				fmt.Printf("attr padding: %d\n", pad)
+				fmt.Printf("Attribute padding: %d\n", pad)
 			}
+			index += 2
 
 			val := attrsByte[index : index+int(aLen)]
-			index += (int(aLen) + pad)
 			attr.Value = val
-			fmt.Println("attr value")
+			fmt.Println("Attribute value")
 			fmt.Println(hex.Dump(val))
+			index += (int(aLen) + pad)
+
+			if _, ok := dup[attr.Type]; ok {
+				fmt.Printf("Attribute type %s has already parsed", attrTypes[attr.Type])
+				continue
+			}
+
+			dup[aType] = true
 
 			attrs = append(attrs, attr)
 		}
 
 		m.Attributes = attrs
+	} else {
+		m.Attributes = make(Attributes, 0)
 	}
 
 	return nil
 }
 
-func (m *Message) getAttr() {
-
+func (m *Message) extractXORMappedAddress() (XORMappedAddress, bool) {
+	xadd := XORMappedAddress{}
+	attr, ok := extractAttr(m.Attributes, xorMappedAddress)
+	if !ok {
+		return xadd, false
+	}
+	if err := xadd.parse(attr); err != nil {
+		return xadd, false
+	}
+	return xadd, true
 }
 
-func (attrs *Attributes) includeTypes(types ...uint16) error {
+type XORMappedAddress struct {
+	// 	0                   1                   2                   3
+	// 	0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//  |0 0 0 0 0 0 0 0|    Family     |         X-Port                |
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	//  |                X-Address (Variable)
+	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	Family  uint8
+	Address netip.Addr
+	Port    uint16
+}
 
+const (
+	ipv4 = 0x01
+	ipv6 = 0x02
+)
+
+func (xa XORMappedAddress) parse(attr Attribute) error {
+	if attr.Type != xorMappedAddress {
+		return errors.New("type is not XOR-MAPPED-ADDRESS")
+	}
+	index := 1 // except Reserved area
+	xa.Family = attr.Value[index]
+	fmt.Printf("XOR-MAPPED-ADDRESS Family: %X\n", xa.Family)
+	index++
+
+	xport := binary.BigEndian.Uint16(attr.Value[index : index+2])
+	mc16 := uint16(magicCookie >> 16)
+	xa.Port = xport ^ mc16
+	fmt.Printf("XOR-MAPPED-ADDRESS Port: %d\n", xa.Port)
+	index += 2
+
+	if xa.Family == ipv4 {
+		xaddr := binary.BigEndian.Uint32(attr.Value[index : index+4])
+		xaddr ^= magicCookie
+		var bytes [4]byte
+		binary.BigEndian.PutUint32(bytes[:], xaddr)
+		xa.Address = netip.AddrFrom4(bytes)
+		fmt.Printf("XOR-MAPPED-ADDRESS Address(ipv4): %s\n", xa.Address.String())
+	} else {
+		// TODO ipv6
+	}
+
+	return nil
 }
