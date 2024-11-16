@@ -2,21 +2,58 @@ package main
 
 import (
 	"crypto/rand"
+	"flag"
+	"fmt"
+	"os"
 
 	"github.com/ek-170/myroute/pkg/logger"
 	"github.com/ek-170/myroute/pkg/stun"
 )
 
 const (
-	dest     = "stun:stun.l.google.com:19302"
-	destIPv4 = "74.125.250.129"
-	destIPv6 = "240f:7f:106e:1:c807:9559:46aa:3d10:19302"
+	// default STUN server candidates
+	// "stun.l.google.com:19302",
+	// "stun1.l.google.com:19302",
+	// "stun2.l.google.com:19302",
+	// "stun3.l.google.com:19302",
+	// "stun4.l.google.com:19302",
+	// "global.stun.twilio.com:3478",
+
+	DefaultXX = "stun.l.google.com:19302"
+	DefaultYX = "stun1.l.google.com:19302"
 )
 
 func main() {
-	logger.Info("start")
+	var (
+		urlxxStr = flag.String("xx", DefaultXX, "STUN server url, address is \"x\", port is \"X\"")
+		// urlxyStr = flag.String("xy", "", "STUN server url, address is \"x\", port is \"Y\"")
+		// urlyxStr = flag.String("yx", DefaultYX, "STUN server url, address is \"y\", port is \"X\"")
+		// urlyyStr = flag.String("yy", "", "STUN server url, address is \"y\", port is \"Y\"")
+		verbose = flag.Bool("v", false, "verbose")
+		help    = flag.Bool("h", false, "command usage help")
+	)
 
-	client, err := stun.NewClient(destIPv4, 19302)
+	flag.Parse()
+
+	if *help {
+		flag.Usage()
+		os.Exit(0)
+	}
+
+	if *verbose {
+		if err := logger.InitLogger(os.Stdout, logger.Text, logger.DebugStr); err != nil {
+			panic(err)
+		}
+	}
+
+	urlxx, err := stun.ParseSTUNURL(*urlxxStr)
+	if err != nil {
+		panic(err)
+	}
+
+	logger.Debug(fmt.Sprintf("target: %s:%s", urlxx.Scheme, urlxx.Host))
+
+	client, err := stun.NewClient(*urlxx)
 	if err != nil {
 		panic(err)
 	}

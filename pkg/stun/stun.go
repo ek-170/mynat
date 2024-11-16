@@ -7,9 +7,21 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
+	"strconv"
+	"strings"
+
+	"github.com/ek-170/myroute/pkg/logger"
+)
+
+var (
+	errInvalidPortRange error = errors.New("invalid port range")
+	errNotSTUNURIScheme error = errors.New("not STUN URI scheme")
 )
 
 const (
+	DefaultPort = "3478"
+
 	HeaderByte               = 20
 	TransactionIDByte        = 12
 	AttrBoundaryByte         = 4
@@ -308,4 +320,71 @@ func (xa XORMappedAddress) parse(attr Attribute) error {
 	}
 
 	return nil
+}
+
+// ParseSTUNURL parses a string URL and returns a url.URL object
+// If the scheme is not stun or stuns, it returns an error
+// If no port is specified, it assigns the default STUN port 3478
+// expected URL format is "stun(s):host:port", "stun(s):host", host:port, host
+func ParseSTUNURL(rawURL string) (*url.URL, error) {
+	url := new(url.URL)
+	first := strings.Index(rawURL, ":")
+	last := strings.LastIndex(rawURL, ":")
+
+	if first == -1 {
+		// treat as only including host
+		url.Scheme = "stun"
+		url.Host = fmt.Sprintf("%s:%s", rawURL, DefaultPort)
+		return url, nil
+	}
+
+	if first == last {
+		// treat as scheme:host or host:port
+		maybePort := rawURL[first+1:]
+		if err := validatePort(maybePort); err != nil {
+			logger.Warn(err.Error())
+			if errors.Is(err, errInvalidPortRange) {
+				// host:port, but invalid port range
+				return nil, err
+			}
+			// scheme:host
+			scheme := rawURL[:first]
+			if !isSTUNScheme(scheme) {
+				return nil, errNotSTUNURIScheme
+			}
+			url.Scheme = scheme
+			url.Host = rawURL[first+1:]
+		} else {
+			url.Scheme = "stun"
+			url.Host = rawURL
+		}
+		return url, nil
+	}
+
+	if first < last {
+		// treat as scheme:host:port
+		scheme := rawURL[:first]
+		if !isSTUNScheme(scheme) {
+			return nil, errNotSTUNURIScheme
+		}
+		url.Scheme = scheme
+		url.Host = rawURL[first+1:]
+	}
+
+	return url, nil
+}
+
+func validatePort(port string) error {
+	p, err := strconv.Atoi(port)
+	if err != nil {
+		return err
+	}
+	if p < 1 || p > 65535 {
+		return fmt.Errorf("validation failed: %w", errInvalidPortRange)
+	}
+	return nil
+}
+
+func isSTUNScheme(scheme string) bool {
+	return scheme == "stun" || scheme == "stuns"
 }
