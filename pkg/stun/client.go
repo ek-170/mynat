@@ -1,9 +1,8 @@
 package stun
 
 import (
-	"fmt"
 	"net"
-	"net/netip"
+	"net/url"
 	"time"
 )
 
@@ -18,19 +17,10 @@ type Client struct {
 	timeout  time.Duration
 }
 
-func NewClient(addr string, port uint16, opts ...ClientOption) (Client, error) {
+func NewClient(url url.URL, opts ...ClientOption) (Client, error) {
 	const network = "udp"
 
-	// TODO add DNS
-	// if addr == domain {
-	// 	translate addr to ip
-	// }
-
-	ipAddr, err := netip.ParseAddr(addr)
-	if err != nil {
-		return Client{}, err
-	}
-	conn, err := net.Dial(network, fmt.Sprintf("%s:%d", ipAddr, port))
+	conn, err := net.Dial(network, url.Host)
 	if err != nil {
 		return Client{}, err
 	}

@@ -4,7 +4,6 @@ package logger
 import (
 	"context"
 	"errors"
-	"os"
 	"sync"
 
 	"io"
@@ -15,15 +14,8 @@ import (
 
 var (
 	// default is stdout & text format
-	logger *slog.Logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
+	logger *slog.Logger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 	once   sync.Once
-)
-
-const (
-	InfoStr  = "info"
-	DebugStr = "debug"
-	WarnStr  = "warn"
-	ErrorStr = "error"
 )
 
 var (
@@ -35,13 +27,37 @@ var (
 	initErr error
 )
 
-func InitLogger(w io.Writer, format string, level string, fixedAttrs ...any) error {
+type Format string
+
+func (f Format) String() string {
+	return string(f)
+}
+
+const (
+	Text Format = "text"
+	JSON Format = "json"
+)
+
+type Level string
+
+func (f Level) String() string {
+	return string(f)
+}
+
+const (
+	InfoStr  Level = "info"
+	DebugStr Level = "debug"
+	WarnStr  Level = "warn"
+	ErrorStr Level = "error"
+)
+
+func InitLogger(w io.Writer, format Format, level Level, fixedAttrs ...any) error {
 	f := func() {
-		l, err := strToSlogLevel(level)
+		l, err := strToSlogLevel(level.String())
 		if err != nil {
 			initErr = err
 		}
-		h, err := strToSlogHandler(w, format, l.Level())
+		h, err := strToSlogHandler(w, format.String(), l.Level())
 		if err != nil {
 			initErr = err
 		}
