@@ -67,6 +67,7 @@ func (c Client) Do(msg Message) (Message, error) {
 				return Message{}, err
 			}
 			writeRetry++
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 		break
@@ -82,6 +83,7 @@ func (c Client) Do(msg Message) (Message, error) {
 				return Message{}, err
 			}
 			readRetry++
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 		break
