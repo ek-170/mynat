@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	// default is stdout & text format
 	logger *slog.Logger = slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
 	once   sync.Once
 )
@@ -21,10 +20,6 @@ var (
 var (
 	errInvalidLogLevel   = errors.New("invalid log level was specified")
 	errInvalidLoggerType = errors.New("invalid logger type was specified")
-)
-
-var (
-	initErr error
 )
 
 type Format string
@@ -52,20 +47,23 @@ const (
 )
 
 func InitLogger(w io.Writer, format Format, level Level, fixedAttrs ...any) error {
+	var initErr error = nil
+
 	f := func() {
 		l, err := strToSlogLevel(level.String())
 		if err != nil {
 			initErr = err
+			return
 		}
 		h, err := strToSlogHandler(w, format.String(), l.Level())
 		if err != nil {
 			initErr = err
+			return
 		}
 		logger = slog.New(h)
-		if fixedAttrs != nil {
-			logger.With(fixedAttrs...)
+		if len(fixedAttrs) > 0 {
+			logger = logger.With(fixedAttrs...)
 		}
-		initErr = nil
 	}
 	once.Do(f)
 	return initErr
@@ -105,7 +103,6 @@ func (f Fields) Merge(other Fields) Fields {
 	if f == nil {
 		return other
 	}
-	// 新しいものを作ってマージ
 	clone := maps.Clone(f)
 	for key, value := range other {
 		clone[key] = value
@@ -115,15 +112,11 @@ func (f Fields) Merge(other Fields) Fields {
 
 type contextKey struct{}
 
-// ContextにFieldsを追加する
 func WithFields(ctx context.Context, fields Fields) context.Context {
-	// nil レシーバのハンドリングをしているのでいきなり Merge を呼び出して OK
 	return context.WithValue(ctx, contextKey{}, contextualFields(ctx).Merge(fields))
 }
 
-// Fields を取り出すのはこのパッケージだけの責務なので非公開関数で問題なし
 func contextualFields(ctx context.Context) Fields {
-	// コンテキストに設定されていないときは nil を返す
 	f, _ := ctx.Value(contextKey{}).(Fields)
 	return f
 }

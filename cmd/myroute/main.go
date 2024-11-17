@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
 	"flag"
 	"fmt"
 	"os"
@@ -58,16 +57,7 @@ func main() {
 		panic(err)
 	}
 
-	tid := [stun.TransactionIDByte]byte{}
-	rand.Read(tid[:])
-	req := stun.Message{
-		Type:          stun.BindingReq,
-		Length:        0,
-		Cookie:        stun.MagicCookie,
-		TransactionID: tid,
-	}
-
-	res, err := client.Do(req)
+	res, err := client.Do(stun.NewMessage(stun.BindingReq))
 	if err != nil {
 		panic(err)
 	}
@@ -75,5 +65,12 @@ func main() {
 		panic(err)
 	}
 
-	res.ExtractXORMappedAddress()
+	xadd := stun.XORMappedAddress{}
+	attr, exist := res.Attributes.Extract(stun.AttrXorMappedAddress)
+	if !exist {
+		panic("not exists XOR-MAPPED-ADDRESS")
+	}
+	if err := xadd.Parse(attr, res.TransactionID); err != nil {
+		panic(err)
+	}
 }

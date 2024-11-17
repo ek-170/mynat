@@ -2,11 +2,11 @@ package stun
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -28,6 +28,11 @@ const (
 	MagicCookie       uint32 = 0x2112A442
 )
 
+type (
+	STUNRequest   uint16
+	TransactionID [TransactionIDByte]byte
+)
+
 const (
 
 	// STUN Message type
@@ -39,11 +44,12 @@ const (
 	//  |11|10|9|8|7|1|6|5|4|0|3|2|1|0|
 	//  +--+--+-+-+-+-+-+-+-+-+-+-+-+-+
 
-	BindingReq uint16 = 0x0001
-	BindingRes uint16 = 0x0101
+	BindingReq STUNRequest = 0x0001
+	BindingRes STUNRequest = 0x0101
 )
 
-// RFC8489
+// Message represents STUN message
+// see more detail: https://tex2e.github.io/rfc-translater/html/rfc8489.html#5--STUN-Message-Structure
 type Message struct {
 
 	// 	0                   1                   2                   3
@@ -58,92 +64,23 @@ type Message struct {
 	//  |                                                               |
 	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-	Type          uint16                  // 2bit: 00, 14bit: Type
-	Length        uint16                  // Message Lengh except Header
-	Cookie        uint32                  // must be fixed value: 0x2112A442
-	TransactionID [TransactionIDByte]byte // created by crypto/rand
+	Type          STUNRequest   // 2bit: 00, 14bit: Type
+	Length        uint16        // Message Lengh except Header
+	Cookie        uint32        // must be fixed value: 0x2112A442
+	TransactionID TransactionID // created by crypto/rand
 	Attributes    Attributes
 }
 
-type Attributes []Attribute
-
-// MUST end on a 32-bit boundary
-type Attribute struct {
-
-	// 	0                   1                   2                   3
-	// 	0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	//  |         Type                  |            Length             |
-	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	//  |                         Value (variable)                ....
-	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-	Type   uint16
-	Length uint16 // except padding bytes
-	Value  []byte
-}
-
-const (
-	// Comprehension-required range (0x0000-0x7FFF):
-	// 0x0000: Reserved
-	reserved uint16 = 0x0000
-	// 0x0001: MAPPED-ADDRESS
-	mappedAddress uint16 = 0x0001
-	// 0x0002: Reserved; was RESPONSE-ADDRESS prior to [RFC5389]
-	responseAddress uint16 = 0x002
-	// 0x0003: Reserved; was CHANGE-REQUEST prior to [RFC5389]
-	cahngeRequest uint16 = 0x0003
-	// 0x0004: Reserved; was SOURCE-ADDRESS prior to [RFC5389]
-	sourceAddress uint16 = 0x0004
-	// 0x0005: Reserved; was CHANGED-ADDRESS prior to [RFC5389]
-	changedAddress uint16 = 0x0005
-	// 0x0006: USERNAME
-	username uint16 = 0x0006
-	// 0x0007: Reserved; was PASSWORD prior to [RFC5389]
-	password uint16 = 0x0007
-	// 0x0008: MESSAGE-INTEGRITY
-	messageIntegrity uint16 = 0x0008
-	// 0x0009: ERROR-CODE
-	errorCode uint16 = 0x0009
-	// 0x000A: UNKNOWN-ATTRIBUTES
-	unknownAttributes uint16 = 0x000A
-	// 0x000B: Reserved; was REFLECTED-FROM prior to [RFC5389]
-	reflectedFrom uint16 = 0x000B
-	// 0x0014: REALM
-	realm uint16 = 0x0014
-	// 0x0015: NONCE
-	nonce uint16 = 0x0015
-	// 0x0020: XOR-MAPPED-ADDRESS
-	xorMappedAddress uint16 = 0x0020
-)
-
-var attrTypes map[uint16]string = map[uint16]string{
-	reserved:          "Reserved",
-	mappedAddress:     "MAPPED-ADDRESS",
-	responseAddress:   "RESPONSE-ADDRESS",
-	cahngeRequest:     "CHANGE-REQUEST",
-	sourceAddress:     "SOURCE-ADDRESS",
-	changedAddress:    "CHANGED-ADDRESS",
-	username:          "USERNAME",
-	password:          "PASSWORD",
-	messageIntegrity:  "MESSAGE-INTEGRITY",
-	errorCode:         "ERROR-CODE",
-	unknownAttributes: "UNKNOWN-ATTRIBUTES",
-	reflectedFrom:     "REFLECTED-FROM",
-	realm:             "REALM",
-	nonce:             "NONCE",
-	xorMappedAddress:  "XOR-MAPPED-ADDRESS",
-}
-
-func extractAttr(a Attributes, attrType uint16) (Attribute, bool) {
-	if len(a) > 0 {
-		for _, v := range a {
-			if attrType == v.Type {
-				return v, true
-			}
-		}
+func NewMessage(req STUNRequest) Message {
+	tid := TransactionID{}
+	rand.Read(tid[:])
+	return Message{
+		Type:          req,
+		Length:        0,
+		Cookie:        MagicCookie,
+		TransactionID: tid,
+		Attributes:    make(Attributes, 0),
 	}
-	return Attribute{}, false
 }
 
 // Encode encodes a STUN message into binary format.
@@ -170,6 +107,12 @@ func (m *Message) Encode() ([]byte, error) {
 		if err := binary.Write(buf, binary.BigEndian, attr.Length); err != nil {
 			return nil, err
 		}
+		if attr.Length%AttrBoundaryByte != 0 {
+			// add padding for align 4 bytes order
+			padBytes := int(AttrBoundaryByte - (attr.Length % AttrBoundaryByte))
+			pad := make([]byte, padBytes)
+			attr.Value = append(attr.Value, pad...)
+		}
 		if _, err := buf.Write(attr.Value); err != nil {
 			return nil, err
 		}
@@ -189,7 +132,7 @@ func (m *Message) Decode(data []byte) error {
 	mtype := data[:2]
 	fmt.Println("message type")
 	fmt.Println(hex.Dump(mtype))
-	m.Type = binary.BigEndian.Uint16(mtype)
+	m.Type = STUNRequest(binary.BigEndian.Uint16(mtype))
 
 	mlen := data[2:4]
 	m.Length = binary.BigEndian.Uint16(mlen)
@@ -205,21 +148,21 @@ func (m *Message) Decode(data []byte) error {
 	for i := 0; i < TransactionIDByte; i++ {
 		tid[i] = data[i+8]
 	}
-	fmt.Println("transaction id")
+	fmt.Println("Transaction ID")
 	fmt.Println(hex.Dump(tid[:]))
 	m.TransactionID = tid
 
-	// Attribnutesのデコード
-	// 重複して属性タイプが表示された場合は最初の値のみ有効
+	// decode Attribnutes
+	// if duplicate attribute types are displayed, only the first value is valid
 	if m.Length > 0 {
 		attrs := make(Attributes, 1)
 		index := 0
 		attrsByte := data[HeaderByte:]
-		dup := make(map[uint16]bool, 1)
+		dup := make(map[AttributeType]bool, 1)
 		for index < int(m.Length) {
 			attr := Attribute{}
 
-			aType := binary.BigEndian.Uint16(attrsByte[index : index+2])
+			aType := AttributeType(binary.BigEndian.Uint16(attrsByte[index : index+2]))
 			attr.Type = aType
 			fmt.Printf("Attribute type: %s\n", attrTypes[attr.Type])
 			fmt.Println(hex.Dump(attrsByte[index : index+2]))
@@ -258,65 +201,6 @@ func (m *Message) Decode(data []byte) error {
 		m.Attributes = attrs
 	} else {
 		m.Attributes = make(Attributes, 0)
-	}
-
-	return nil
-}
-
-func (m *Message) ExtractXORMappedAddress() (XORMappedAddress, bool) {
-	xadd := XORMappedAddress{}
-	attr, ok := extractAttr(m.Attributes, xorMappedAddress)
-	if !ok {
-		return xadd, false
-	}
-	if err := xadd.parse(attr); err != nil {
-		return xadd, false
-	}
-	return xadd, true
-}
-
-type XORMappedAddress struct {
-	// 	0                   1                   2                   3
-	// 	0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	//  |0 0 0 0 0 0 0 0|    Family     |         X-Port                |
-	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	//  |                X-Address (Variable)
-	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	Family  uint8
-	Address netip.Addr
-	Port    uint16
-}
-
-const (
-	ipv4 = 0x01
-	ipv6 = 0x02
-)
-
-func (xa XORMappedAddress) parse(attr Attribute) error {
-	if attr.Type != xorMappedAddress {
-		return errors.New("type is not XOR-MAPPED-ADDRESS")
-	}
-	index := 1 // except Reserved area
-	xa.Family = attr.Value[index]
-	fmt.Printf("XOR-MAPPED-ADDRESS Family: %X\n", xa.Family)
-	index++
-
-	xport := binary.BigEndian.Uint16(attr.Value[index : index+2])
-	mc16 := uint16(MagicCookie >> 16)
-	xa.Port = xport ^ mc16
-	fmt.Printf("XOR-MAPPED-ADDRESS Port: %d\n", xa.Port)
-	index += 2
-
-	if xa.Family == ipv4 {
-		xaddr := binary.BigEndian.Uint32(attr.Value[index : index+4])
-		xaddr ^= MagicCookie
-		var bytes [4]byte
-		binary.BigEndian.PutUint32(bytes[:], xaddr)
-		xa.Address = netip.AddrFrom4(bytes)
-		fmt.Printf("XOR-MAPPED-ADDRESS Address(ipv4): %s\n", xa.Address.String())
-	} else {
-		// TODO ipv6
 	}
 
 	return nil
