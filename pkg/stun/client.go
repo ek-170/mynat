@@ -71,10 +71,10 @@ func WithTimeout(timeout time.Duration) ClientOption {
 }
 
 // Do send STUN request, and wait for recieving response
-func (c Client) Do(msg Message) (Message, error) {
+func (c Client) Do(msg *Message) (*Message, error) {
 	req, err := msg.Encode()
 	if err != nil {
-		return Message{}, err
+		return nil, err
 	}
 
 	writeRetry := 0
@@ -83,7 +83,7 @@ func (c Client) Do(msg Message) (Message, error) {
 		_, err = c.conn.Write(req)
 		if err != nil {
 			if writeRetry < int(c.maxRetry) {
-				return Message{}, err
+				return nil, err
 			}
 			writeRetry++
 			time.Sleep(200 * time.Millisecond)
@@ -99,7 +99,7 @@ func (c Client) Do(msg Message) (Message, error) {
 		_, err = c.conn.Read(packet)
 		if err != nil {
 			if readRetry < int(c.maxRetry) {
-				return Message{}, err
+				return nil, err
 			}
 			readRetry++
 			time.Sleep(200 * time.Millisecond)
@@ -110,9 +110,9 @@ func (c Client) Do(msg Message) (Message, error) {
 	res := Message{}
 	err = res.Decode(packet)
 	if err != nil {
-		return Message{}, err
+		return nil, err
 	}
-	return res, nil
+	return &res, nil
 }
 
 func (c Client) Close() error {

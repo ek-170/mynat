@@ -71,10 +71,10 @@ type Message struct {
 	Attributes    Attributes
 }
 
-func NewMessage(req STUNRequest) Message {
+func NewMessage(req STUNRequest) *Message {
 	tid := TransactionID{}
 	rand.Read(tid[:])
-	return Message{
+	return &Message{
 		Type:          req,
 		Length:        0,
 		Cookie:        MagicCookie,
