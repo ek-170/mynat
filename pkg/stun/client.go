@@ -1,6 +1,8 @@
 package stun
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"time"
@@ -17,10 +19,27 @@ type Client struct {
 	timeout  time.Duration
 }
 
-func NewClient(url url.URL, opts ...ClientOption) (Client, error) {
-	const network = "udp"
+var (
+	errCouldNotResolveHostName = errors.New("could not resolve host name")
+)
 
-	conn, err := net.Dial(network, url.Host)
+func NewClient(url url.URL, lip net.IP, opts ...ClientOption) (Client, error) {
+	// TODO add support ipv6
+	const network = "udp4"
+
+	laddr := &net.UDPAddr{
+		IP:   lip,
+		Port: 0,
+	}
+
+	raddr, err := net.ResolveUDPAddr(network, url.Host)
+	if err != nil {
+		return Client{}, err
+	}
+
+	fmt.Printf("%s:%d -> %s\n", laddr.IP, laddr.Port, url.Host)
+
+	conn, err := net.DialUDP(network, laddr, raddr)
 	if err != nil {
 		return Client{}, err
 	}
