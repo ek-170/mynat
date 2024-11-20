@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 )
 
@@ -163,7 +164,7 @@ type XORMappedAddress struct {
 	//  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 	Family  uint8
-	Address netip.Addr
+	Address net.IP
 	Port    uint16
 }
 
@@ -185,12 +186,9 @@ func (xa *XORMappedAddress) Parse(attr Attribute, tid TransactionID) error {
 	if xa.Family == ipv4 {
 		xaddr := binary.BigEndian.Uint32(attr.Value[index : index+4])
 		xaddr ^= MagicCookie
-		var bytes [4]byte
-		binary.BigEndian.PutUint32(bytes[:], xaddr)
-		xa.Address = netip.AddrFrom4(bytes)
-		if !xa.Address.IsValid() {
-			return errors.New("invalid IPv4 address generated")
-		}
+		var addr [4]byte
+		binary.BigEndian.PutUint32(addr[:], xaddr)
+		xa.Address = net.IP(addr[:])
 		fmt.Printf("XOR-MAPPED-ADDRESS Address(ipv4): %s\n", xa.Address.String())
 	} else {
 		// ipv6
@@ -199,7 +197,8 @@ func (xa *XORMappedAddress) Parse(attr Attribute, tid TransactionID) error {
 		copy(comparison[4:], tid[:])
 
 		xaddr := ([16]byte)(attr.Value[index : index+16])
-		xa.Address = netip.AddrFrom16(xor128(xaddr, comparison))
+		addr := xor128(xaddr, comparison)
+		xa.Address = net.IP(addr[:])
 		fmt.Printf("XOR-MAPPED-ADDRESS Address(ipv6): %s\n", xa.Address.String())
 	}
 
