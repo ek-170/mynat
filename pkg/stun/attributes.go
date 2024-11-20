@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+
+	"github.com/ek-170/myroute/pkg/logger"
 )
 
 type Attributes []Attribute
@@ -132,22 +134,22 @@ func (ma MappedAddress) Parse(attr Attribute) error {
 	}
 	index := 1 // except Reserved area
 	ma.Family = attr.Value[index]
-	fmt.Printf("MAPPED-ADDRESS Family: %X\n", ma.Family)
+	logger.Info(fmt.Sprintf("MAPPED-ADDRESS Family: %X\n", ma.Family))
 	index++
 
 	xport := binary.BigEndian.Uint16(attr.Value[index : index+2])
 	mc16 := uint16(MagicCookie >> 16)
 	ma.Port = xport ^ mc16
-	fmt.Printf("MAPPED-ADDRESS Port: %d\n", ma.Port)
+	logger.Info(fmt.Sprintf("MAPPED-ADDRESS Port: %d\n", ma.Port))
 	index += 2
 
 	if ma.Family == ipv4 {
 		ma.Address = netip.AddrFrom4(([4]byte)(attr.Value[index : index+4]))
-		fmt.Printf("MAPPED-ADDRESS Address(ipv4): %s\n", ma.Address.String())
+		logger.Info(fmt.Sprintf("MAPPED-ADDRESS Address(ipv4): %s\n", ma.Address.String()))
 	} else {
 		// ipv6
 		ma.Address = netip.AddrFrom16(([16]byte)(attr.Value[index : index+16]))
-		fmt.Printf("MAPPED-ADDRESS Address(ipv6): %s\n", ma.Address.String())
+		logger.Info(fmt.Sprintf("MAPPED-ADDRESS Address(ipv6): %s\n", ma.Address.String()))
 	}
 
 	return nil
@@ -174,13 +176,13 @@ func (xa *XORMappedAddress) Parse(attr Attribute, tid TransactionID) error {
 	}
 	index := 1 // except Reserved area
 	xa.Family = attr.Value[index]
-	fmt.Printf("XOR-MAPPED-ADDRESS Family: %X\n", xa.Family)
+	logger.Info(fmt.Sprintf("XOR-MAPPED-ADDRESS Family: %X\n", xa.Family))
 	index++
 
 	xport := binary.BigEndian.Uint16(attr.Value[index : index+2])
 	mc16 := uint16(MagicCookie >> 16)
 	xa.Port = xport ^ mc16
-	fmt.Printf("XOR-MAPPED-ADDRESS Port: %d\n", xa.Port)
+	logger.Info(fmt.Sprintf("XOR-MAPPED-ADDRESS Port: %d\n", xa.Port))
 	index += 2
 
 	if xa.Family == ipv4 {
@@ -189,7 +191,7 @@ func (xa *XORMappedAddress) Parse(attr Attribute, tid TransactionID) error {
 		var addr [4]byte
 		binary.BigEndian.PutUint32(addr[:], xaddr)
 		xa.Address = net.IP(addr[:])
-		fmt.Printf("XOR-MAPPED-ADDRESS Address(ipv4): %s\n", xa.Address.String())
+		logger.Info(fmt.Sprintf("XOR-MAPPED-ADDRESS Address(ipv4): %s\n", xa.Address.String()))
 	} else {
 		// ipv6
 		var comparison [16]byte
@@ -199,7 +201,7 @@ func (xa *XORMappedAddress) Parse(attr Attribute, tid TransactionID) error {
 		xaddr := ([16]byte)(attr.Value[index : index+16])
 		addr := xor128(xaddr, comparison)
 		xa.Address = net.IP(addr[:])
-		fmt.Printf("XOR-MAPPED-ADDRESS Address(ipv6): %s\n", xa.Address.String())
+		logger.Info(fmt.Sprintf("XOR-MAPPED-ADDRESS Address(ipv6): %s\n", xa.Address.String()))
 	}
 
 	return nil

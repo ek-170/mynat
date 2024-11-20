@@ -3,6 +3,8 @@ package mynat
 import (
 	"fmt"
 	"net"
+
+	"github.com/ek-170/myroute/pkg/logger"
 )
 
 func GetIPFromIface(targetIface string) (ip4 []net.IP, ip6 []net.IP, err error) {
@@ -44,13 +46,13 @@ func GetIPFromIface(targetIface string) (ip4 []net.IP, ip6 []net.IP, err error) 
 		}
 
 		if ip.To4() != nil {
-			fmt.Printf("found ipv4 in interface %s: %s\n", targetIface, ip.String())
+			logger.Info(fmt.Sprintf("found ipv4 in interface %s: %s\n", targetIface, ip.String()))
 			ip4 = append(ip4, ip)
 			continue
 		}
 
 		if ip.To16() != nil {
-			fmt.Printf("found ipv6 in interface %s: %s\n", targetIface, ip.String())
+			logger.Info(fmt.Sprintf("found ipv6 in interface %s: %s\n", targetIface, ip.String()))
 			ip6 = append(ip6, ip)
 		}
 	}
