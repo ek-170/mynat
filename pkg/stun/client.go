@@ -37,6 +37,7 @@ func NewClient(url url.URL, lip net.IP, opts ...ClientOption) (Client, error) {
 		return Client{}, err
 	}
 
+	fmt.Println("start to STUN request")
 	fmt.Printf("%s:%d -> %s\n", laddr.IP, laddr.Port, url.Host)
 
 	conn, err := net.DialUDP(network, laddr, raddr)

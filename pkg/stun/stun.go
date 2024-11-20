@@ -85,7 +85,7 @@ func NewMessage(req STUNRequest) *Message {
 
 // Encode encodes a STUN message into binary format.
 func (m *Message) Encode() ([]byte, error) {
-	fmt.Println("-- encode --")
+	logger.Info("-- encode --")
 	buf := new(bytes.Buffer)
 	if err := binary.Write(buf, binary.BigEndian, m.Type); err != nil {
 		return nil, err
@@ -117,39 +117,39 @@ func (m *Message) Encode() ([]byte, error) {
 			return nil, err
 		}
 	}
-	fmt.Println(hex.Dump(buf.Bytes()))
+	logger.Info(hex.Dump(buf.Bytes()))
 
 	return buf.Bytes(), nil
 }
 
 func (m *Message) Decode(data []byte) error {
-	fmt.Println("-- decode --")
+	logger.Info("-- decode --")
 	if len(data) < HeaderByte {
 		return errors.New("header size is too short")
 	}
-	fmt.Println(hex.Dump(data[:HeaderByte]))
+	logger.Info(hex.Dump(data[:HeaderByte]))
 
 	mtype := data[:2]
-	fmt.Println("message type")
-	fmt.Println(hex.Dump(mtype))
+	logger.Info("message type")
+	logger.Info(hex.Dump(mtype))
 	m.Type = STUNRequest(binary.BigEndian.Uint16(mtype))
 
 	mlen := data[2:4]
 	m.Length = binary.BigEndian.Uint16(mlen)
-	fmt.Printf("Message length: %d\n", m.Length)
-	fmt.Println(hex.Dump(mlen))
+	logger.Info(fmt.Sprintf("Message length: %d\n", m.Length))
+	logger.Info(hex.Dump(mlen))
 
 	cookie := data[4:8]
-	fmt.Println("magic cookie")
-	fmt.Println(hex.Dump(cookie))
+	logger.Info("magic cookie")
+	logger.Info(hex.Dump(cookie))
 	m.Cookie = binary.BigEndian.Uint32(cookie)
 
 	tid := [TransactionIDByte]byte{}
 	for i := 0; i < TransactionIDByte; i++ {
 		tid[i] = data[i+8]
 	}
-	fmt.Println("Transaction ID")
-	fmt.Println(hex.Dump(tid[:]))
+	logger.Info("Transaction ID")
+	logger.Info(hex.Dump(tid[:]))
 	m.TransactionID = tid
 
 	// decode Attribnutes
@@ -164,8 +164,8 @@ func (m *Message) Decode(data []byte) error {
 
 			aType := AttributeType(binary.BigEndian.Uint16(attrsByte[index : index+2]))
 			attr.Type = aType
-			fmt.Printf("Attribute type: %s\n", attrTypes[attr.Type])
-			fmt.Println(hex.Dump(attrsByte[index : index+2]))
+			logger.Info(fmt.Sprintf("Attribute type: %s\n", attrTypes[attr.Type]))
+			logger.Info(hex.Dump(attrsByte[index : index+2]))
 			index += 2
 			// TODO
 			// type values between 0x0000 and 0x7FFF are comprehension-required
@@ -173,23 +173,23 @@ func (m *Message) Decode(data []byte) error {
 
 			aLen := binary.BigEndian.Uint16(attrsByte[index : index+2])
 			attr.Length = aLen
-			fmt.Printf("Attribute len: %d\n", attr.Length)
-			fmt.Println(hex.Dump(attrsByte[index : index+2]))
+			logger.Info(fmt.Sprintf("Attribute len: %d\n", attr.Length))
+			logger.Info(hex.Dump(attrsByte[index : index+2]))
 			pad := 0
 			if aLen%AttrBoundaryByte != 0 {
 				pad = int(AttrBoundaryByte - (aLen % AttrBoundaryByte))
-				fmt.Printf("Attribute padding: %d\n", pad)
+				logger.Info(fmt.Sprintf("Attribute padding: %d\n", pad))
 			}
 			index += 2
 
 			val := attrsByte[index : index+int(aLen)]
 			attr.Value = val
-			fmt.Println("Attribute value")
-			fmt.Println(hex.Dump(val))
+			logger.Info("Attribute value")
+			logger.Info(hex.Dump(val))
 			index += (int(aLen) + pad)
 
 			if _, ok := dup[attr.Type]; ok {
-				fmt.Printf("Attribute type %s has already parsed", attrTypes[attr.Type])
+				logger.Info(fmt.Sprintf("Attribute type %s has already parsed", attrTypes[attr.Type]))
 				continue
 			}
 
